@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Upgraded Crypto Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>📊 Upgraded Crypto Signal Dashboard</h2>
+
+<!-- Coin selector -->
+<select id="coin" onchange="changeCoin()">
+  <option value="bitcoin">BTC</option>
+  <option value="ethereum">ETH</option>
+  <option value="solana">SOL</option>
+  <option value="ripple">XRP</option>
+</select>
+
+<!-- Timeframe selector -->
+<select id="timeframe">
+  <option value="60000">1 Minute</option>
+  <option value="300000">5 Minutes</option>
+  <option value="900000">15 Minutes</option>
+  <option value="3600000">1 Hour</option>
+</select>
+
+<div class="box">
+  <p>⏰ Time: <span id="time">--</span></p>
+  <p id="price">--</p>
+  <p>Status: <span id="signal">Waiting</span></p>
+</div>
+
+<div class="capital">
+  💼 Capital: ₹<input id="capital" type="number" value="10000">
+  <p>📈 Total PnL: ₹<span id="pnl">0</span></p>
+  <p>✅ Win: <span id="winCount">0</span> | ❌ Loss: <span id="lossCount">0</span> | 🎯 Accuracy: <span id="accuracy">0%</span></p>
+</div>
+
+<div class="topcoin">
+  🏆 Top Performing Coin:
+  <b id="topCoin">--</b>
+  <div id="topBar"></div>
+</div>
+
+<label>
+  <input type="checkbox" checked onchange="autoSwitchEnabled=this.checked">
+  🔁 Auto Switch
+</label>
+
+<h3>📜 Signal History</h3>
+<table id="historyTable">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Coin</th>
+      <th>Signal</th>
+      <th>Price</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h3>🏅 Coin Leaderboard</h3>
+<table id="leaderboard">
+  <thead>
+    <tr>
+      <th>Coin</th>
+      <th>Win</th>
+      <th>Loss</th>
+      <th>Accuracy %</th>
+      <th>PnL (₹)</th>
+      <th>Confidence %</th>
+      <th>Sparkline</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script src="script.js"></script>
+</body>
+</html>
