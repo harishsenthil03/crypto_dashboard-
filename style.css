@@ -1,0 +1,71 @@
+body {
+  background:#0f172a;
+  color:white;
+  font-family:Arial;
+  text-align:center;
+}
+
+.box {
+  background:#1e293b;
+  padding:20px;
+  border-radius:10px;
+  width:300px;
+  margin:auto;
+}
+
+select, input {
+  padding:8px;
+  margin:10px;
+}
+
+.capital {
+  background:#020617;
+  padding:10px;
+  margin:10px auto;
+  max-width:360px;
+  border-radius:8px;
+}
+
+.topcoin {
+  background: #020617;
+  padding:10px;
+  margin:10px auto;
+  max-width:360px;
+  border-radius:10px;
+  font-weight:bold;
+}
+
+#topBar {
+  height: 20px;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  border-radius: 10px;
+  width: 0%;
+  transition: width 0.5s;
+  margin-top: 5px;
+}
+
+table {
+  width: 100%;
+  max-width: 360px;
+  margin: 15px auto;
+  border-collapse: collapse;
+  background: #1e293b;
+}
+
+th, td {
+  border: 1px solid #334155;
+  padding: 6px;
+  font-size: 13px;
+}
+
+th {
+  background: #020617;
+}
+
+.buy { color: #22c55e; }
+.sell { color: #ef4444; }
+
+.leaderboard-top1 { background-color: #16a34a; color: #fff; font-weight:bold;}
+.leaderboard-top2 { background-color: #facc15; color: #000; font-weight:bold;}
+.leaderboard-top3 { background-color: #f97316; color: #fff; font-weight:bold;}
+.leaderboard-other { background-color: #1e293b; color: #fff;}
