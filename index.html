@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Upgraded Live Stock Dashboard</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+th { background: #333; color: #fff; }
+.buy { background: #4caf50; color: white; }
+.sell { background: #f44336; color: white; }
+.hold { background: #ffc107; color: black; }
+</style>
+</head>
+<body>
+
+<h2>Upgraded Live Stock Dashboard</h2>
+
+<div>
+<label>Stocks (comma-separated, e.g., RELIANCE.NS,TCS.NS):</label>
+<input type="text" id="symbolInput" placeholder="Enter stock symbols">
+<button onclick="startTracking()">Start Tracking</button>
+</div>
+
+<h3>Add Buy Trade (for Profit/Stop-loss alerts)</h3>
+<div>
+<label>Stock Symbol:</label><input type="text" id="buySymbol" placeholder="e.g., RELIANCE.NS">
+<label>Buy Price:</label><input type="number" id="buyPrice" placeholder="e.g., 2300">
+<label>Target %:</label><input type="number" id="target" placeholder="e.g., 2">
+<label>Stop Loss %:</label><input type="number" id="stopLoss" placeholder="e.g., 1">
+<button onclick="addTrade()">Add Trade</button>
+</div>
+
+<audio id="alertSound" src="https://www.soundjay.com/button/beep-07.wav" preload="auto"></audio>
+
+<table id="signalTable">
+<thead>
+<tr>
+<th>Stock</th>
+<th>Current Price</th>
+<th>Short MA</th>
+<th>Long MA</th>
+<th>Trend</th>
+<th>Signal</th>
+<th>Buy Price</th>
+<th>Target Price</th>
+<th>Stop Loss</th>
+<th>Status</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<script>
+let priceHistory = {};
+let symbols = [];
+let prevSignals = {};
+let trades = [];
+
+function startTracking(){
+    const input = document.getElementById("symbolInput").value.trim();
+    if(!input) return alert("Enter stock symbols!");
+    symbols = input.split(",").map(s => s.trim().toUpperCase());
+    symbols.forEach(s => priceHistory[s] = []);
+    fetchAndUpdate();
+    setInterval(fetchAndUpdate, 10000); // 10-second update
+}
+
+function addTrade(){
+    const symbol = document.getElementById('buySymbol').value.toUpperCase();
+    const buy = parseFloat(document.getElementById('buyPrice').value);
+    const targetPerc = parseFloat(document.getElementById('target').value);
+    const stopPerc = parseFloat(document.getElementById('stopLoss').value);
+
+    if(!symbol || !buy) return alert("Enter valid trade details");
+    const targetPrice = buy * (1 + targetPerc/100);
+    const stopPrice = buy * (1 - stopPerc/100);
+
+    trades.push({symbol, buy, targetPrice, stopPrice, status:"Hold", currentPrice: buy});
+}
+
+async function fetchAndUpdate(){
+    if(symbols.length === 0) return;
+    const url = `https://nse-api-sand.vercel.app/stock/list?symbols=${symbols.join(",")}&res=num`;
+    const alertSound = document.getElementById("alertSound");
+    const now = new Date().toLocaleTimeString();
+    const tbody = document.querySelector("#signalTable tbody");
+    tbody.innerHTML = "";
+
+    try{
+        const res = await fetch(url);
+        const data = await res.json();
+
+        data.stocks.forEach(stock => {
+            const sym = stock.symbol;
+            const price = parseFloat(stock.last_price);
+            if(!priceHistory[sym]) priceHistory[sym] = [];
+            priceHistory[sym].push(price);
+            if(priceHistory[sym].length > 50) priceHistory[sym].shift();
+
+            const shortMA = calculateSMA(priceHistory[sym],5);
+            const longMA = calculateSMA(priceHistory[sym],20);
+
+            let trend = "Sideways";
+            let signal = "Hold";
+            if(shortMA > longMA){ trend = "Uptrend"; signal="Buy"; }
+            else if(shortMA < longMA){ trend = "Downtrend"; signal="Sell"; }
+
+            // Check profit/stop-loss trades
+            let trade = trades.find(t => t.symbol === sym);
+            if(trade){
+                trade.currentPrice = price;
+                let prevStatus = trade.status;
+                if(price >= trade.targetPrice) trade.status="Sell (Target Hit)";
+                else if(price <= trade.stopPrice) trade.status="Sell (Stop Loss)";
+                else trade.status="Hold";
+
+                if(prevStatus !== trade.status && trade.status.includes("Sell")){
+                    alert(`${sym} - ${trade.status} at ${price}`);
+                    alertSound.play();
+                }
+            }
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${sym}</td>
+                <td>${price.toFixed(2)}</td>
+                <td>${shortMA.toFixed(2)}</td>
+                <td>${longMA.toFixed(2)}</td>
+                <td>${trend}</td>
+                <td class="${signal.toLowerCase()}">${signal}</td>
+                <td>${trade ? trade.buy : "-"}</td>
+                <td>${trade ? trade.targetPrice.toFixed(2) : "-"}</td>
+                <td>${trade ? trade.stopPrice.toFixed(2) : "-"}</td>
+                <td>${trade ? trade.status : "-"}</td>
+                <td>${now}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }catch(e){
+        console.error("API error:", e);
+    }
+}
+
+function calculateSMA(arr, period){
+    if(arr.length < period) return arr[arr.length-1] || 0;
+    const slice = arr.slice(-period);
+    return slice.reduce((a,b)=>a+b,0)/slice.length;
+}
+</script>
+
+</body>
+</html>
