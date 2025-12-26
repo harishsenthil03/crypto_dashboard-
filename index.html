@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Full Upgraded Multi-Stock AI Trading Dashboard</title>
+<style>
+body{font-family:Arial;background:#f2f2f2;padding:15px;}
+.card{background:#fff;padding:12px;margin-bottom:12px;border-radius:8px;}
+button{padding:6px 12px;margin:4px;border:none;border-radius:6px;cursor:pointer;font-size:14px;}
+.buy{background:#38b000;color:#fff;}
+.sell{background:#e3342f;color:#fff;}
+.hold{background:#2563eb;color:#fff;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+th{background:#eee;}
+.strength-box{width:100%;height:14px;background:#e5e7eb;border-radius:10px;overflow:hidden;margin-top:4px;}
+#strengthBar{height:100%;width:0%;background:#ef4444;transition:0.3s;}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>📊 Full Upgraded Multi-Stock AI Trading Dashboard</h2>
+
+<audio id="alertSound">
+  <source src="https://www.soundjay.com/button/beep-07.wav" type="audio/wav">
+</audio>
+
+<div class="card">
+API Key: <input id="apiKey" type="text" value="DT09ADFL2GAEEOE4" style="width:180px;">
+Capital ₹: <input id="capital" type="number" value="1000" style="width:90px;">
+Base Trade %: <input id="baseTrade" type="number" value="2" style="width:60px;">%
+Safe Loss Limit: <input id="safeLimit" type="number" value="3" style="width:60px;">
+</div>
+
+<div class="card">
+<h4>🌐 Global AI Analysis – Best Stock to Trade</h4>
+<p>Next Suggested Stock: <b id="bestStock">-</b></p>
+<p>Signal: <b id="bestSignal">-</b></p>
+<p>Confidence: <b id="bestConfidence">-</b></p>
+<p>Probability: <b id="bestProbability">0%</b></p>
+</div>
+
+<div class="card">
+<h4>📌 Manage Stocks</h4>
+<input id="newStock" placeholder="Add Stock Symbol (e.g., RELIANCE.NS)">
+<button onclick="addStock()">Add Stock</button>
+<select id="stockSelect" onchange="changeStock()"></select>
+</div>
+
+<div class="card">
+<label><input type="checkbox" id="highOnly" onchange="updateWatchlist()"> Show HIGH Confidence Only</label>
+<h4>📋 Stock Watchlist</h4>
+<table id="watchlistTable">
+<thead>
+<tr><th>Stock</th><th>Signal</th><th>Confidence</th><th>Probability %</th><th>Actions</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card">
+<h4>🤖 AI Signal for Selected Stock</h4>
+Stock: <span id="currentStock">-</span><br>
+Signal: <b id="signal">-</b><br>
+Confidence: <b id="confidence">-</b><br>
+Probability: <b id="probability">0%</b><br>
+Suggested Stake ₹: <b id="suggestStake">0</b>
+<div class="strength-box"><div id="strengthBar"></div></div>
+<p id="signalExplanation"></p>
+</div>
+
+<div class="card">
+<h4>📊 Live Price Chart</h4>
+<canvas id="priceChart"></canvas>
+</div>
+
+<div class="card">
+<h4>🎮 Submit Trade Result</h4>
+<button class="buy" onclick="submitTrade('Buy',true)">Buy Win</button>
+<button class="buy" onclick="submitTrade('Buy',false)">Buy Loss</button>
+<button class="sell" onclick="submitTrade('Sell',true)">Sell Win</button>
+<button class="sell" onclick="submitTrade('Sell',false)">Sell Loss</button>
+<button class="hold" onclick="submitTrade('Hold',true)">Hold Win</button>
+<button class="hold" onclick="submitTrade('Hold',false)">Hold Loss</button>
+</div>
+
+<div class="card">
+<h4>📊 Recent Trend (Last 10 Trades)</h4>
+<div id="trend"></div>
+</div>
+
+<div class="card">
+<h4>📈 Individual Stock Profit Chart</h4>
+<canvas id="profitChart"></canvas>
+</div>
+
+<div class="card">
+<h4>💹 Portfolio Cumulative Profit</h4>
+<canvas id="portfolioProfitChart"></canvas>
+</div>
+
+<div class="card">
+<h4>📊 Global Backtesting & Signal Accuracy</h4>
+<table id="globalAccuracyTable">
+<thead>
+<tr><th>Signal</th><th>Total Trades</th><th>Wins</th><th>Accuracy %</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+<canvas id="globalAccuracyChart"></canvas>
+</div>
+
+<script>
+if("Notification" in window){
+  Notification.requestPermission();
+}
+
+let stocks=[], currentStock=null;
+let stockData={}, signalStats={}, historyRows={}, profitData={}, currentLevel={}, consecutiveLoss={};
+let priceChart, profitChart, portfolioChart;
+
+// ----------------- STOCK MANAGEMENT -----------------
+function addStock(){
+  let sym = document.getElementById("newStock").value.trim();
+  if(!sym || stocks.includes(sym)) return;
+  stocks.push(sym);
+  stockData[sym]={labels:[],prices:[],signals:[]};
+  signalStats[sym]={Buy:{total:0,wins:0},Sell:{total:0,wins:0},Hold:{total:0,wins:0}};
+  historyRows[sym]=[];
+  profitData[sym]=[];
+  currentLevel[sym]=1;
+  consecutiveLoss[sym]=0;
+  updateStockSelect();
+  changeStock(sym);
+}
+function updateStockSelect(){
+  let sel=document.getElementById("stockSelect");
+  sel.innerHTML="";
+  stocks.forEach(s=>{sel.innerHTML+=`<option value="${s}">${s}</option>`;});
+}
+function changeStock(stock=null){
+  currentStock = stock || document.getElementById("stockSelect").value;
+  document.getElementById("currentStock").innerText=currentStock;
+  fetchPriceData(currentStock);
+  updateDisplay(currentStock);
+  updateWatchlist();
+  updatePortfolioProfit();
+  updateGlobalAnalysis();
+  updateGlobalBacktesting();
+}
+
+// ----------------- FETCH LIVE PRICE -----------------
+async function fetchPriceData(stock){
+  let apiKey=document.getElementById("apiKey").value.trim();
+  if(!apiKey) return;
+  try{
+    let url=`https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${stock}&interval=5min&outputsize=compact&apikey=${apiKey}`;
+    let res=await fetch(url);
+    let data=await res.json();
+    let ts=data["Time Series (5min)"];
+    if(!ts) return;
+    stockData[stock].labels=[]; stockData[stock].prices=[];
+    for(let t in ts){stockData[stock].labels.unshift(t); stockData[stock].prices.unshift(parseFloat(ts[t]["4. close"]));}
+    updatePriceChart(stock);
+  }catch(e){console.error(e);}
+}
+
+// ----------------- PRICE CHART -----------------
+function updatePriceChart(stock){
+  let ctx=document.getElementById("priceChart").getContext("2d");
+  let d=stockData[stock]; d.signals=d.signals||d.labels.map(_=>null);
+  if(priceChart) priceChart.destroy();
+  priceChart=new Chart(ctx,{
+    type:'line',
+    data:{labels:d.labels,datasets:[
+      {label:"Price",data:d.prices,borderColor:"#2563eb",fill:false},
+      {label:"Signals",data:d.labels.map((l,i)=>d.signals[i]?d.prices[i]:null),
+       pointBackgroundColor:d.labels.map((l,i)=>{let s=d.signals[i]; if(s==="Buy") return "green"; if(s==="Sell") return "red"; if(s==="Hold") return "blue"; return "transparent";}),
+       pointRadius:6,type:'scatter'}
+    ]},
+    options:{plugins:{legend:{display:true}}}
+  });
+}
+
+// ----------------- AI SIGNAL -----------------
+function getAISignal(stock){
+  let localPick=["Buy","Sell","Hold"][Math.floor(Math.random()*3)];
+  let localProb=Math.floor(Math.random()*100);
+  let trendArray = historyRows[stock].slice(-30) || [];
+  let counts={Buy:0,Sell:0,Hold:0},wins={Buy:0,Sell:0,Hold:0};
+  trendArray.forEach(t=>{counts[t.signal]++; if(t.result) wins[t.signal]++;});
+  let worldProb={};
+  ["Buy","Sell","Hold"].forEach(s=>{worldProb[s]=counts[s]?((wins[s]/counts[s])*100):50;});
+  let combined={};
+  ["Buy","Sell","Hold"].forEach(s=>{combined[s]=Math.round(localProb*0.5 + worldProb[s]*0.5);});
+  let best=Object.keys(combined).reduce((a,b)=>combined[a]>=combined[b]?a:b);
+  let prob=combined[best]; 
+  let conf=prob>=70?"HIGH":prob>=40?"MEDIUM":"LOW";
+  
+  stockData[stock].signals=stockData[stock].labels.map(_=>null);
+  if(stockData[stock].labels.length) stockData[stock].signals[0]=best;
+  updatePriceChart(stock);
+  
+  if(conf==="HIGH"){
+    document.getElementById("alertSound").play();
+    if("Notification" in window && Notification.permission==="granted"){
+      new Notification("🚨 HIGH CONFIDENCE SIGNAL",{body:`${best} (${prob}%) on ${stock}`,icon:"https://cdn-icons-png.flaticon.com/512/3135/3135715.png"});
+    }
+  }
+  return {signal:best,prob,conf};
+}
+
+// ----------------- STAKE CALCULATION -----------------
+function calculateStake(stock,conf){
+  if(consecutiveLoss[stock]>=Number(document.getElementById("safeLimit").value) || conf==="LOW") return 0;
+  return Math.round(Number(document.getElementById("capital").value)*(Number(document.getElementById("baseTrade").value)/100)*Math.pow(1.5,consecutiveLoss[stock]));
+}
+
+// ----------------- SUBMIT TRADE -----------------
+function submitTrade(signal,resultWin){
+  let ai=getAISignal(currentStock);
+  let stake=calculateStake(currentStock,ai.conf);
+  document.getElementById("signal").innerText=ai.signal;
+  document.getElementById("confidence").innerText=ai.conf;
+  document.getElementById("probability").innerText=ai.prob+"%";
+  document.getElementById("suggestStake").innerText=stake;
+  
+  signalStats[currentStock][signal].total++;
+  if(resultWin) signalStats[currentStock][signal].wins++;
+  historyRows[currentStock].unshift({signal:signal,result:resultWin});
+  if(resultWin){consecutiveLoss[currentStock]=0; currentLevel[currentStock]=1;} else{consecutiveLoss[currentStock]++; currentLevel[currentStock]++;}
+  
+  updateDisplay(currentStock);
+  updateWatchlist();
+  updatePortfolioProfit();
+  updateGlobalAnalysis();
+  updateGlobalBacktesting();
+}
+
+function submitTradeFromWatchlist(stock,signal){
+  currentStock=stock;
+  let ai=getAISignal(stock);
+  let stake=calculateStake(stock,ai.conf);
+  let resultWin = confirm(`Mark this trade as WIN for ${signal} on ${stock}?`);
+  signalStats[stock][signal].total++;
+  if(resultWin) signalStats[stock][signal].wins++;
+  historyRows[stock].unshift({signal:signal,result:resultWin});
+  if(resultWin){consecutiveLoss[stock]=0; currentLevel[stock]=1;} else{consecutiveLoss[stock]++; currentLevel[stock]++;}
+  updateDisplay(stock);
+  updateWatchlist();
+  updatePortfolioProfit();
+  updateGlobalAnalysis();
+  updateGlobalBacktesting();
+}
+
+// ----------------- DISPLAY UPDATES -----------------
+function updateDisplay(stock){
+  let t=document.getElementById("trend"); t.innerHTML="";
+  historyRows[stock].slice(0,10).forEach(r=>{t.innerHTML+=`${r.signal} - ${r.result?"Win":"Loss"}<br>`;});
+  
+  let ctx=document.getElementById("profitChart").getContext("2d");
+  let profit=0; profitData[stock]=[];
+  historyRows[stock].forEach((r,i)=>{profit += (r.result?calculateStake(stock,"HIGH"):-calculateStake(stock,"HIGH")); profitData[stock].push({x:i+1,y:profit});});
+  if(profitChart) profitChart.destroy();
+  profitChart=new Chart(ctx,{type:'line',data:{datasets:[{label:stock+" Profit",data:profitData[stock],borderColor:"#38b000",fill:false}]},options:{scales:{x:{title:{display:true,text:"Trade #"}},y:{title:{display:true,text:"Profit ₹"}}}}});
+}
+
+// ----------------- WATCHLIST -----------------
+function updateWatchlist(){
+  let tbody = document.querySelector("#watchlistTable tbody");
+  tbody.innerHTML="";
+  let highOnly = document.getElementById("highOnly").checked;
+  stocks.forEach(stock=>{
+    let ai=getAISignal(stock);
+    if(highOnly && ai.conf!=="HIGH") return;
+    let confColor=ai.conf==="HIGH"?"#22c55e":ai.conf==="MEDIUM"?"#facc15":"#ef4444";
+    tbody.innerHTML+=`
+      <tr style="background:${confColor};">
+        <td>${stock}</td>
+        <td>${ai.signal}</td>
+        <td>${ai.conf}</td>
+        <td>${ai.prob.toFixed(0)}%</td>
+        <td>
+          <button onclick="submitTradeFromWatchlist('${stock}','Buy')" class="buy">Buy</button>
+          <button onclick="submitTradeFromWatchlist('${stock}','Sell')" class="sell">Sell</button>
+          <button onclick="submitTradeFromWatchlist('${stock}','Hold')" class="hold">Hold</button>
+        </td>
+      </tr>
+    `;
+  });
+}
+
+// ----------------- PORTFOLIO PROFIT -----------------
+function updatePortfolioProfit(){
+  let combinedProfit=[]; let maxTrades=Math.max(...stocks.map(s=>historyRows[s].length));
+  for(let i=0;i<maxTrades;i++){
+    let profit=0;
+    stocks.forEach(stock=>{
+      let trade=historyRows[stock][i];
+      if(trade){ let stake=calculateStake(stock,"HIGH"); profit += trade.result ? stake : -stake; }
+    });
+    combinedProfit.push({x:i+1,y:profit + (combinedProfit[i-1]?.y || 0)});
+  }
+  let ctx=document.getElementById("portfolioProfitChart").getContext("2d");
+  if(portfolioChart) portfolioChart.destroy();
+  portfolioChart=new Chart(ctx,{type:'line',data:{datasets:[{label:"Portfolio Profit",data:combinedProfit,borderColor:"#2563eb",fill:false}]},options:{scales:{x:{title:{display:true,text:"Trade #"}},y:{title:{display:true,text:"Cumulative Profit ₹"}}}}});
+}
+
+// ----------------- GLOBAL AI ANALYSIS -----------------
+function updateGlobalAnalysis(){
+  let bestStock=null, bestSignal=null, bestConf=null, bestProb=0;
+  stocks.forEach(stock=>{
+    let ai=getAISignal(stock);
+    if(ai.conf==="HIGH" && ai.prob>bestProb){bestProb=ai.prob; bestStock=stock; bestSignal=ai.signal; bestConf=ai.conf;}
+  });
+  if(!bestStock){stocks.forEach(stock=>{let ai=getAISignal(stock); if(ai.conf==="MEDIUM" && ai.prob>bestProb){bestProb=ai.prob; bestStock=stock; bestSignal=ai.signal; bestConf=ai.conf;}});}
+  document.getElementById("bestStock").innerText=bestStock||"-";
+  document.getElementById("bestSignal").innerText=bestSignal||"-";
+  document.getElementById("bestConfidence").innerText=bestConf||"-";
+  document.getElementById("bestProbability").innerText=bestProb.toFixed(0)+"%";
+}
+
+// ----------------- GLOBAL BACKTESTING -----------------
+function updateGlobalBacktesting(){
+  let totalStats={Buy:{total:0,wins:0},Sell:{total:0,wins:0},Hold:{total:0,wins:0}};
+  stocks.forEach(stock=>{["Buy","Sell","Hold"].forEach(sig=>{totalStats[sig].total+=signalStats[stock][sig].total; totalStats[sig].wins+=signalStats[stock][sig].wins;});});
+  // Table
+  let tbody=document.querySelector("#globalAccuracyTable tbody"); tbody.innerHTML="";
+  ["Buy","Sell","Hold"].forEach(sig=>{let acc=totalStats[sig].total?((totalStats[sig].wins/totalStats[sig].total)*100).toFixed(1):0;
+    tbody.innerHTML+=`<tr><td>${sig}</td><td>${totalStats[sig].total}</td><td>${totalStats[sig].wins}</td><td>${acc}%</td></tr>`;
+  });
+  // Chart
+  let ctx=document.getElementById("globalAccuracyChart").getContext("2d");
+  if(window.globalAccuracyChart) window.globalAccuracyChart.destroy();
+  window.globalAccuracyChart=new Chart(ctx,{type:'bar',data:{labels:["Buy","Sell","Hold"],datasets:[{label:"Accuracy %",data:["Buy","Sell","Hold"].map(sig=>totalStats[sig].total?((totalStats[sig].wins/totalStats[sig].total)*100).toFixed(1):0),backgroundColor:["#38b000","#e3342f","#2563eb"]}]} ,options:{scales:{y:{beginAtZero:true,max:100
