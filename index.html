@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Indian Stocks AI Dashboard – Full Upgrade with News Sentiment</title>
+<style>
+body{font-family:Arial;background:#f2f2f2;padding:15px}
+h2{text-align:center}
+.card{background:#fff;padding:12px;margin-bottom:12px;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid #ccc;padding:6px;text-align:center}
+th{background:#eee}
+.buy{color:green;font-weight:bold}
+.sell{color:red;font-weight:bold}
+.hold{color:#555}
+.badge{padding:4px 8px;border-radius:5px;margin:2px;display:inline-block;color:#fff;font-weight:bold}
+.high{background:#22c55e}
+.medium{background:#facc15;color:#000}
+.low{background:#ef4444}
+canvas{background:#fff;border:1px solid #ccc;margin-top:12px}
+button{cursor:pointer;margin:2px;padding:6px 10px}
+</style>
+</head>
+<body>
+<h2>🇮🇳 NSE AI Signal Dashboard – News Sentiment Upgrade</h2>
+
+<div class="card">
+<h4>📌 Best Stock to Trade Now</h4>
+<p id="bestStock">Calculating...</p>
+</div>
+
+<div class="card">
+<h4>📝 Manage Watchlist</h4>
+<input id="newStock" placeholder="Enter NSE symbol e.g. RELIANCE.NS">
+<button onclick="addStock()">Add Stock</button>
+<button onclick="removeStock()">Remove Last</button>
+<button onclick="updateDashboard()" style="background:#2563eb;color:#fff;">🔄 Refresh Now</button>
+<p>Watchlist: <span id="watchlistDisplay"></span></p>
+</div>
+
+<div class="card">
+<h4>📋 Signals & History</h4>
+<table>
+<thead>
+<tr>
+<th>Stock</th><th>Price</th><th>Signal</th><th>Conf</th><th>Prob %</th>
+<th>RSI</th><th>EMA Trend</th><th>Sentiment</th><th>Reason</th><th>Time</th></tr>
+</thead>
+<tbody id="stockTable"></tbody>
+</table>
+</div>
+
+<div class="card">
+<h4>📊 Accuracy Chart</h4>
+<canvas id="accuracyChart" width="800" height="250"></canvas>
+</div>
+
+<div class="card">
+<h4>📈 Price + Signal Chart</h4>
+<canvas id="priceChart" width="800" height="300"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const apiKey = "40489a97653547d287a6584acf409280"; // Replace with your Twelve Data API key
+let watchlist = ["RELIANCE.NS","TCS.NS","INFY.NS"];
+let accuracyTracker = {};
+let historyRecords = [];
+
+function ensureTrack(s){ if(!accuracyTracker[s]) accuracyTracker[s]={buy:{wins:0,total:0},sell:{wins:0,total:0}}; }
+watchlist.forEach(s=>ensureTrack(s));
+
+function updateWatchlistDisplay(){ document.getElementById("watchlistDisplay").innerText = watchlist.join(", "); }
+function addStock(){ let s=document.getElementById("newStock").value.trim().toUpperCase(); if(s && !watchlist.includes(s)){ watchlist.push(s); ensureTrack(s); updateWatchlistDisplay(); } document.getElementById("newStock").value=""; }
+function removeStock(){ let removed=watchlist.pop(); delete accuracyTracker[removed]; updateWatchlistDisplay(); }
+updateWatchlistDisplay();
+
+// Fetch Live Price
+async function fetchLivePrice(symbol){
+  try{
+    let url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${apiKey}`;
+    let res = await fetch(url);
+    let data = await res.json();
+    return parseFloat(data.price) || 0;
+  }catch(e){ return 0; }
+}
+
+// Fetch RSI + EMA
+async function fetchIndicators(symbol){
+  try{
+    let url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=15min&outputsize=50&apikey=${apiKey}`;
+    let res = await fetch(url);
+    let data = await res.json();
+    let closes = data.values.map(v=>parseFloat(v.close)).reverse();
+    let ema = closes.slice(-20).reduce((a,v)=>a+v,0)/20;
+    let last = closes[closes.length-1];
+    let gains=0, losses=0;
+    for(let i=1;i<closes.length;i++){
+      let diff=closes[i]-closes[i-1];
+      if(diff>0) gains+=diff; else losses+=Math.abs(diff);
+    }
+    let rsi = 100 - (100 / (1 + (gains/14)/(losses/14)));
+    return {last,rsi,emaTrend:(last>ema?"Up":"Down")};
+  }catch(e){ return {last:0,rsi:0,emaTrend:"-"}; }
+}
+
+// Fetch News (Yahoo) & Sentiment
+async function fetchNews(symbol){
+  try{
+    let res=await fetch(`https://finance.yahoo.com/quote/${symbol}`);
+    let html=await res.text();
+    let lines=[...html.matchAll(/"title":"(.*?)"/g)].map(m=>m[1]);
+    return lines.slice(0,5);
+  }catch(e){ return []; }
+}
+
+function analyzeSentiment(headlines){
+  let score=0;
+  const pos=["gain","up","bull","strong","profit","buy","good"];
+  const neg=["loss","down","bear","weak","sell","drop","bad"];
+  headlines.forEach(h=>{let t=h.toLowerCase(); pos.forEach(p=>{if(t.includes(p))score++}); neg.forEach(n=>{if(t.includes(n))score--});});
+  return Math.max(Math.min(score,5),-5);
+}
+
+// AI Signal Logic
+function aiSignalLogic(priceData, sentiment){
+  let {rsi, emaTrend} = priceData;
+  let sig="HOLD", conf="LOW", prob=50, reason="No strong signal";
+
+  if(rsi<30 && emaTrend==="Up" && sentiment>0){ sig="BUY"; reason="RSI<30 + EMA Up + Positive News"; }
+  else if(rsi>70 && emaTrend==="Down" && sentiment<0){ sig="SELL"; reason="RSI>70 + EMA Down + Negative News"; }
+
+  let score = Math.abs(sentiment)*10 + (sig==="HOLD"?10:30);
+  conf = (score>=60?"HIGH":score>=40?"MEDIUM":"LOW");
+  prob = Math.min(Math.max(score*3,0),100);
+  return {sig,conf,prob,reason};
+}
+
+// Signal Alerts
+function triggerAlert(stock, signal, conf){
+  if(conf==="HIGH" && Notification.permission==="granted"){
+    new Notification(`${stock} Signal: ${signal}`,{body:`High confidence signal!`});
+    new Audio('https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg').play();
+  }
+}
+
+// Charts
+let accuracyChartCtx=document.getElementById("accuracyChart").getContext("2d");
+let priceChartCtx=document.getElementById("priceChart").getContext("2d");
+let accuracyChart=new Chart(accuracyChartCtx,{type:'bar',data:{labels:[],datasets:[{label:'BUY Accuracy %',data:[],backgroundColor:'green'},{label:'SELL Accuracy %',data:[],backgroundColor:'red'}]},options:{responsive:true,plugins:{legend:{position:'top'}}}});
+let priceChart=new Chart(priceChartCtx,{type:'line',data:{labels:[],datasets:[]},options:{responsive:true,plugins:{legend:{position:'top'}}}});
+
+// Main Update
+async function updateDashboard(){
+  let tbody=document.getElementById("stockTable"); tbody.innerHTML="";
+  let bestScore=-Infinity, bestStockObj=null;
+
+  for(let stock of watchlist){
+    let price = await fetchLivePrice(stock);
+    let indicators = await fetchIndicators(stock);
+    let news = await fetchNews(stock);
+    let sentiment = analyzeSentiment(news);
+    let ai = aiSignalLogic(indicators, sentiment);
+
+    // Determine best stock
+    let score = ai.prob + sentiment*10;
+    if(score>bestScore){ bestScore = score; bestStockObj = {stock,signal:ai.sig,conf:ai.conf,score}; }
+
+    // History
+    let now = new Date();
+    historyRecords.push({stock,price,signal:ai.sig,conf:ai.conf,prob:ai.prob,time:now});
+    if(historyRecords.length>200) historyRecords.shift();
+
+    // Accuracy
+    if(ai.sig==="BUY"){ accuracyTracker[stock].buy.total++; }
+    if(ai.sig==="SELL"){ accuracyTracker[stock].sell.total++; }
+
+    // Alert
+    triggerAlert(stock,ai.sig,ai.conf);
+
+    tbody.innerHTML+=`<tr>
+      <td>${stock}</td><td>${price.toFixed(2)}</td>
+      <td class="${ai.sig.toLowerCase()}">${ai.sig}</td>
+      <td><span class="badge ${ai.conf.toLowerCase()}">${ai.conf}</span></td>
+      <td>${ai.prob.toFixed(0)}%</td>
+      <td>${indicators.rsi.toFixed(1)}</td>
+      <td>${indicators.emaTrend}</td>
+      <td>${sentiment}</td>
+      <td>${ai.reason}</td>
+      <td>${now.toLocaleTimeString()}</td>
+    </tr>`;
+  }
+
+  // Best Stock Panel
+  if(bestStockObj){
+    document.getElementById("bestStock").innerText=`${bestStockObj.stock} | Signal: ${bestStockObj.signal} | Conf: ${bestStockObj.conf} | Score: ${bestStockObj.score.toFixed(0)}%`;
+  }
+
+  // Update Charts
+  accuracyChart.data.labels = watchlist;
+  accuracyChart.data.datasets[0].data = watchlist.map(s=>accuracyTracker[s].buy.total?Math.round((accuracyTracker[s].buy.wins/accuracyTracker[s].buy.total)*100):0);
+  accuracyChart.data.datasets[1].data = watchlist.map(s=>accuracyTracker[s].sell.total?Math.round((accuracyTracker[s].sell.wins/accuracyTracker[s].sell.total)*100):0);
+  accuracyChart.update();
+
+  priceChart.data.labels = historyRecords.map(r=>r.time.toLocaleTimeString());
+  priceChart.data.datasets = watchlist.map((s,i)=>({
+    label:s,
+    data:historyRecords.filter(r=>r.stock===s).map(r=>r.price),
+    borderColor: i%2===0?'blue':'orange',
+    fill:false
+  }));
+  priceChart.update();
+}
+
+// Request Notification Permission
+if(Notification.permission!=="granted") Notification.requestPermission();
+
+// Initial Update + Auto Refresh 5 min
+updateDashboard();
+setInterval(updateDashboard, 5*60*1000);
+</script>
+</body>
+</html>
