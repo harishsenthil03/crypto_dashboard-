@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Live Stock AI Signal</title>
+<style>
+body{font-family:Arial;background:#f3f4f6;padding:15px}
+.card{background:#fff;padding:15px;border-radius:10px;margin-bottom:12px}
+.buy{color:#16a34a;font-weight:bold}
+.sell{color:#dc2626;font-weight:bold}
+.hold{color:#ca8a04;font-weight:bold}
+button{padding:10px 16px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:bold}
+</style>
+</head>
+<body>
+
+<h2>📈 Real-Time Stock Signal (News + Trend)</h2>
+
+<div class="card">
+Stock Symbol:
+<input id="symbol" value="AAPL">
+<button onclick="getSignal()">Get Signal</button>
+</div>
+
+<div class="card">
+<p>📅 Date & Time: <b id="time">-</b></p>
+<p>📰 News Sentiment: <b id="sentiment">-</b></p>
+<p>📊 Confidence: <b id="confidence">-</b></p>
+<p>🚦 Signal: <b id="signal">-</b></p>
+</div>
+
+<script>
+const API_KEY = "WKxisHrYpWBZjUUXTBehGAVJm7OujDO0XY7Kdxqe"; // ⚠️ rotate old key
+
+async function getSignal(){
+  const sym = document.getElementById("symbol").value.toUpperCase();
+  document.getElementById("time").innerText = new Date().toLocaleString();
+
+  const url = `https://api.marketaux.com/v1/news/all?symbols=${sym}&language=en&api_token=${API_KEY}`;
+
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if(!data.data || data.data.length === 0){
+      showResult("No News","LOW","NO SIGNAL","hold");
+      return;
+    }
+
+    let score = 0;
+    data.data.slice(0,10).forEach(n=>{
+      if(n.sentiment === "positive") score += 1;
+      if(n.sentiment === "negative") score -= 1;
+    });
+
+    let sentiment = score > 0 ? "POSITIVE" : score < 0 ? "NEGATIVE" : "NEUTRAL";
+    let confidence = Math.min(Math.abs(score)*15 + 40, 90);
+
+    let signal = "NO SIGNAL";
+    let cls = "hold";
+
+    if(sentiment==="POSITIVE" && confidence>=70){
+      signal="BUY"; cls="buy";
+    }
+    if(sentiment==="NEGATIVE" && confidence>=70){
+      signal="SELL"; cls="sell";
+    }
+
+    showResult(sentiment, confidence+"%", signal, cls);
+
+  }catch(e){
+    alert("API error / limit reached");
+  }
+}
+
+function showResult(sent,conf,sig,cls){
+  document.getElementById("sentiment").innerText = sent;
+  document.getElementById("confidence").innerText = conf;
+  const s = document.getElementById("signal");
+  s.innerText = sig;
+  s.className = cls;
+}
+</script>
+
+</body>
+</html>
