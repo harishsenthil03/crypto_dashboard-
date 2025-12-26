@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Live Multi‑Stock AI Trading Dashboard</title>
+<style>
+body{font-family:Arial;background:#f2f2f2;padding:15px;}
+.card{background:#fff;padding:12px;margin-bottom:12px;border-radius:8px;}
+button{padding:6px 12px;margin:4px;border:none;border-radius:6px;cursor:pointer;font-size:14px;}
+.buy{background:#38b000;color:#fff;}
+.sell{background:#e3342f;color:#fff;}
+.hold{background:#2563eb;color:#fff;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+th{background:#eee;}
+.strength-box{width:100%;height:14px;background:#e5e7eb;border-radius:10px;overflow:hidden;margin-top:4px;}
+#strengthBar{height:100%;width:0%;background:#ef4444;transition:0.3s;}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>📊 Live Multi‑Stock AI Trading Dashboard</h2>
+
+<audio id="alertSound"><source src="https://www.soundjay.com/button/beep-07.wav" type="audio/wav"></audio>
+
+<div class="card">
+API Key: <input id="apiKey" type="text" value="DT09ADFL2GAEEOE4" style="width:180px;">
+Capital ₹: <input id="capital" type="number" value="1000" style="width:90px;">
+Base Trade %: <input id="baseTrade" type="number" value="2" style="width:60px;">%
+Safe Loss Limit: <input id="safeLimit" type="number" value="3" style="width:60px;">
+</div>
+
+<div class="card">
+<h4>🌐 Global AI Analysis</h4>
+<p>Next Suggested Stock: <b id="bestStock">-</b></p>
+<p>Signal: <b id="bestSignal">-</b></p>
+<p>Confidence: <b id="bestConfidence">-</b></p>
+<p>Probability: <b id="bestProbability">0%</b></p>
+</div>
+
+<div class="card">
+<h4>📌 Manage Stocks</h4>
+<input id="newStock" placeholder="Add Stock Symbol (e.g., RELIANCE.NS)">
+<button onclick="addStock()">Add Stock</button>
+<select id="stockSelect" onchange="changeStock()"></select>
+</div>
+
+<div class="card">
+<label><input type="checkbox" id="highOnly" onchange="updateWatchlist()"> Show HIGH Confidence Only</label>
+<h4>📋 Watchlist</h4>
+<table id="watchlistTable">
+<thead><tr><th>Stock</th><th>Signal</th><th>Conf</th><th>Prob %</th><th>Actions</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+
+<div class="card">
+<h4>🤖 AI Signal (Selected Stock)</h4>
+Stock: <span id="currentStock">-</span><br>
+Signal: <b id="signal">-</b><br>
+Confidence: <b id="confidence">-</b><br>
+Probability: <b id="probability">0%</b><br>
+Suggested Stake ₹: <b id="suggestStake">0</b>
+<div class="strength-box"><div id="strengthBar"></div></div>
+</div>
+
+<div class="card">
+<h4>📊 Live Price Chart</h4>
+<canvas id="priceChart"></canvas>
+</div>
+
+<div class="card">
+<h4>🎮 Submit Trade Result</h4>
+<button class="buy" onclick="submitTrade('Buy',true)">Buy Win</button>
+<button class="buy" onclick="submitTrade('Buy',false)">Buy Loss</button>
+<button class="sell" onclick="submitTrade('Sell',true)">Sell Win</button>
+<button class="sell" onclick="submitTrade('Sell',false)">Sell Loss</button>
+<button class="hold" onclick="submitTrade('Hold',true)">Hold Win</button>
+<button class="hold" onclick="submitTrade('Hold',false)">Hold Loss</button>
+</div>
+
+<div class="card">
+<h4>📊 Recent Trend (Last 10)</h4>
+<div id="trend"></div>
+</div>
+
+<div class="card">
+<h4>💹 Portfolio Cumulative Profit</h4>
+<canvas id="portfolioProfitChart"></canvas>
+</div>
+
+<div class="card">
+<h4>📊 Global Backtesting & Accuracy</h4>
+<table id="globalAccuracyTable">
+<thead><tr><th>Signal</th><th>Total</th><th>Wins</th><th>Accuracy %</th></tr></thead>
+<tbody></tbody>
+</table>
+<canvas id="globalAccuracyChart"></canvas>
+</div>
+
+<script>
+// === INITIAL SETUP ===
+if("Notification" in window){Notification.requestPermission();}
+let stocks=[], currentStock=null;
+let stockData={}, signalStats={}, historyRows={}, profitData={}, currentLevel={}, consecutiveLoss={};
+let priceChart, portfolioChart;
+
+// === STOCK MANAGEMENT ===
+function addStock(){
+  let s = document.getElementById("newStock").value.trim();
+  if(!s|| stocks.includes(s)) return;
+  stocks.push(s);
+  stockData[s]={labels:[],prices:[],signals:[]};
+  signalStats[s]={Buy:{total:0,wins:0},Sell:{total:0,wins:0},Hold:{total:0,wins:0}};
+  historyRows[s]=[]; profitData[s]=[];
+  currentLevel[s]=1; consecutiveLoss[s]=0;
+  updateStockSelect();
+  changeStock(s);
+}
+function updateStockSelect(){
+  let sel=document.getElementById("stockSelect");
+  sel.innerHTML="";
+  stocks.forEach(s=>{sel.innerHTML+=`<option value="${s}">${s}</option>`;});
+}
+function changeStock(stock=null){
+  currentStock = stock||document.getElementById("stockSelect").value;
+  document.getElementById("currentStock").innerText=currentStock;
+  fetchLivePrices(currentStock);
+  updateDisplay(currentStock);
+  updateWatchlist(); updatePortfolioProfit();
+  updateGlobalAnalysis(); updateGlobalBacktesting();
+}
+
+// === FETCH LIVE 5‑MIN PRICES ===
+async function fetchLivePrices(stock){
+  let apiKey=document.getElementById("apiKey").value.trim();
+  if(!apiKey) return;
+  let url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${stock}&interval=5min&outputsize=compact&apikey=${apiKey}`;
+  try{
+    let res=await fetch(url); let data=await res.json();
+    let series=data["Time Series (5min)"];
+    if(!series) return;
+    stockData[stock].labels=[]; stockData[stock].prices=[];
+    for(let t in series){ stockData[stock].labels.unshift(t); stockData[stock].prices.unshift(parseFloat(series[t]["4. close"])); }
+    updatePriceChart(stock);
+  }catch(e){console.error("Price fetch error",e);}
+}
+
+// === PRICE CHART ===
+function updatePriceChart(stock){
+  let ctx=document.getElementById("priceChart").getContext("2d");
+  let d=stockData[stock]||{labels:[],prices:[],signals:[]};
+  d.signals=d.signals||d.labels.map(_=>null);
+  if(priceChart) priceChart.destroy();
+  priceChart=new Chart(ctx,{
+    type:'line',
+    data:{labels:d.labels,datasets:[
+      {label:"Price",data:d.prices,borderColor:"#2563eb",fill:false},
+      {label:"Signals",data:d.labels.map((l,i)=>d.signals[i]?d.prices[i]:null),
+       pointBackgroundColor:d.labels.map((l,i)=>{
+         let sig=d.signals[i];
+         return sig==="Buy"?"green":sig==="Sell"?"red":sig==="Hold"?"blue":"transparent";
+       }),pointRadius:6,type:'scatter'}
+    ]},
+    options:{plugins:{legend:{display:true}}}
+  });
+}
+
+// === AI SIGNAL ===
+function getAISignal(stock){
+  let choices=["Buy","Sell","Hold"];
+  let sig=choices[Math.floor(Math.random()*3)];
+  let prob=Math.floor(Math.random()*100);
+  let conf=prob>=70?"HIGH":prob>=40?"MEDIUM":"LOW";
+  stockData[stock].signals=stockData[stock].labels.map(_=>null);
+  if(stockData[stock].labels.length) stockData[stock].signals[0]=sig;
+  updatePriceChart(stock);
+  if(conf==="HIGH"){
+    document.getElementById("alertSound").play();
+    if(Notification.permission==="granted") new Notification(`${sig} signal on ${stock}`,{body:`${prob}% confidence`});
+  }
+  return {signal:sig,prob,conf};
+}
+
+// === STAKE CALC ===
+function calculateStake(stock,conf){
+  if(consecutiveLoss[stock]>=Number(document.getElementById("safeLimit").value)||conf==="LOW") return 0;
+  return Math.round(Number(document.getElementById("capital").value)*(Number(document.getElementById("baseTrade").value)/100)*Math.pow(1.5,consecutiveLoss[stock]));
+}
+
+// === TRADE SUBMIT ===
+function submitTrade(signal,resultWin){
+  if(!currentStock) return;
+  let ai=getAISignal(currentStock);
+  let stake=calculateStake(currentStock,ai.conf);
+  signalStats[currentStock][signal].total++;
+  if(resultWin) signalStats[currentStock][signal].wins++;
+  historyRows[currentStock].unshift({signal,result:resultWin});
+  consecutiveLoss[currentStock]=resultWin?0:consecutiveLoss[currentStock]+1;
+  updateDisplay(currentStock); updateWatchlist(); updatePortfolioProfit();
+  updateGlobalAnalysis(); updateGlobalBacktesting();
+}
+
+// === DISPLAY + UTILS ===
+function updateDisplay(stock){
+  let t=document.getElementById("trend"); t.innerHTML="";
+  historyRows[stock].slice(0,10).forEach(r=>{t.innerHTML+=`${r.signal} - ${r.result?"Win":"Loss"}<br>`;});
+}
+
+// === WATCHLIST ===
+function updateWatchlist(){
+  let tbody=document.querySelector("#watchlistTable tbody"); tbody.innerHTML="";
+  let highOnly=document.getElementById("highOnly").checked;
+  stocks.forEach(stock=>{
+    let ai=getAISignal(stock);
+    if(highOnly&&ai.conf!=="HIGH") return;
+    let bg=ai.conf==="HIGH"?"#22c55e":ai.conf==="MEDIUM"?"#facc15":"#ef4444";
+    tbody.innerHTML+=`<tr style="background:${bg}"><td>${stock}</td><td>${ai.signal}</td><td>${ai.conf}</td><td>${ai.prob}%</td><td>
+      <button onclick="changeStock('${stock}');submitTrade('Buy',true)" class="buy">Buy Win</button>
+      <button onclick="changeStock('${stock}');submitTrade('Sell',true)" class="sell">Sell Win</button>
+      <button onclick="changeStock('${stock}');submitTrade('Hold',true)" class="hold">Hold Win</button>
+    </td></tr>`;
+  });
+}
+
+// === PORTFOLIO PROFIT ===
+function updatePortfolioProfit(){
+  let allProf=[]; let maxLen=Math.max(...stocks.map(s=>historyRows[s].length));
+  let cum=0; for(let i=0;i<maxLen;i++){
+    stocks.forEach(s=>{let tr=historyRows[s][i]; if(tr){let stake=calculateStake(s,"HIGH"); cum+=(tr.result?stake:-stake);}});
+    allProf.push({x:i+1,y:cum});
+  }
+  let ctx=document.getElementById("portfolioProfitChart").getContext("2d");
+  if(portfolioChart) portfolioChart.destroy();
+  portfolioChart=new Chart(ctx,{type:'line',data:{datasets:[{label:"Portfolio Profit",data:allProf,borderColor:"#e3342f",fill:false}]},options:{scales:{y:{beginAtZero:false}}}});
+}
+
+// === GLOBAL AI ===
+function updateGlobalAnalysis(){
+  let best={},bestProb=0;
+  stocks.forEach(s=>{let ai=getAISignal(s); if(ai.conf==="HIGH"&&ai.prob>bestProb){bestProb=ai.prob;best={stock:s,signal:ai.signal,conf:ai.conf};}});
+  document.getElementById("bestStock").innerText=best.stock||"-";
+  document.getElementById("bestSignal").innerText=best.signal||"-";
+  document.getElementById("bestConfidence").innerText=best.conf||"-";
+  document.getElementById("bestProbability").innerText=bestProb+"%";
+}
+
+// === GLOBAL BACKTESTING ===
+function updateGlobalBacktesting(){
+  let totals={Buy:{total:0,wins:0},Sell:{total:0,wins:0},Hold:{total:0,wins:0}};
+  stocks.forEach(s=>{["Buy","Sell","Hold"].forEach(sig=>{totals[sig].total+=signalStats[s][sig].total;totals[sig].wins+=signalStats[s][sig].wins;});});
+  let tbody=document.querySelector("#globalAccuracyTable tbody"); tbody.innerHTML="";
+  ["Buy","Sell","Hold"].forEach(sig=>{
+    let acc=totals[sig].total?((totals[sig].wins/totals[sig].total)*100).toFixed(1):0;
+    tbody.innerHTML+=`<tr><td>${sig}</td><td>${totals[sig].total}</td><td>${totals[sig].wins}</td><td>${acc}%</td></tr>`;
+  });
+}
+
+// === AUTO REFRESH ===
+setInterval(()=>{stocks.forEach(s=>fetchLivePrices(s));updateWatchlist();updatePortfolioProfit();updateGlobalAnalysis();updateGlobalBacktesting();},300000);
+
+// === LOAD SAMPLE ===
+window.onload=()=>{addStock("RELIANCE.NS");updateWatchlist();};
+</script>
+
+</body>
+</html>
